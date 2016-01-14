@@ -29,12 +29,17 @@ package htsjdk.variant.variantcontext;
 // the imports for unit testing.
 
 
+import com.sun.glass.ui.SystemClipboard;
+import com.sun.tools.javac.api.ClientCodeWrapper;
+import com.sun.tools.javac.code.Type;
 import htsjdk.tribble.TribbleException;
 import htsjdk.variant.VariantBaseTest;
 import htsjdk.variant.utils.GeneralUtils;
 import org.testng.Assert;
+import org.testng.annotations.DataProvider;
 import org.testng.annotations.Test;
 
+import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.EnumMap;
 import java.util.List;
@@ -182,22 +187,122 @@ public class GenotypeLikelihoodsUnitTest extends VariantBaseTest {
         }
     }
 
-    @Test
-    public void testGetAllelePair(){
-        allelePairTest(0, 0, 0);
-        allelePairTest(1, 0, 1);
-        allelePairTest(2, 1, 1);
-        allelePairTest(3, 0, 2);
-        allelePairTest(4, 1, 2);
-        allelePairTest(5, 2, 2);
-        allelePairTest(6, 0, 3);
-        allelePairTest(7, 1, 3);
-        allelePairTest(8, 2, 3);
-        allelePairTest(9, 3, 3);
+    @DataProvider
+    public Object[][] testGetAllelePairData() {
+        return new Object[][]{
+                {0, 0, 0},
+                {1, 0, 1},
+                {2, 1, 1},
+                {3, 0, 2},
+                {4, 1, 2},
+                {5, 2, 2},
+                {6, 0, 3},
+                {7, 1, 3},
+                {8, 2, 3},
+                {9, 3, 3}
+        };
     }
-        
-    private void allelePairTest(int PLindex, int allele1, int allele2) {
+
+    @Test(dataProvider = "testGetAllelePairData")
+    public void testGetAllelePair(final int PLindex, final int allele1, final int allele2){
         Assert.assertEquals(GenotypeLikelihoods.getAllelePair(PLindex).alleleIndex1, allele1, "allele index " + allele1 + " from PL index " + PLindex + " was not calculated correctly");
         Assert.assertEquals(GenotypeLikelihoods.getAllelePair(PLindex).alleleIndex2, allele2, "allele index " + allele2 + " from PL index " + PLindex + " was not calculated correctly");
+    }
+
+    @DataProvider
+    public Object[][] testCalculatePLcacheData() {
+        return new Object[][]{
+                {
+                        2, 1,
+                        Arrays.asList(Arrays.asList(0),
+                                Arrays.asList(1)
+                        )
+                },
+                {
+                        2, 2,
+                        Arrays.asList(Arrays.asList(0, 0),
+                                Arrays.asList(0, 1),
+                                Arrays.asList(1, 1)
+                        )
+                },
+                {
+                        3, 2,
+                        Arrays.asList(Arrays.asList(0, 0),
+                                Arrays.asList(0, 1),
+                                Arrays.asList(1, 1),
+                                Arrays.asList(0, 2),
+                                Arrays.asList(1, 2),
+                                Arrays.asList(2, 2)
+                        )
+                },
+                {
+                        3, 3,
+                        Arrays.asList(Arrays.asList(0, 0, 0),
+                                Arrays.asList(0, 0, 1),
+                                Arrays.asList(0, 1, 1),
+                                Arrays.asList(1, 1, 1),
+                                Arrays.asList(0, 0, 2),
+                                Arrays.asList(0, 1, 2),
+                                Arrays.asList(1, 1, 2),
+                                Arrays.asList(0, 2, 2),
+                                Arrays.asList(1, 2, 2),
+                                Arrays.asList(2, 2, 2)
+                        )
+                }
+        };
+    }
+
+    @Test(dataProvider = "testCalculatePLcacheData")
+    public void testCalculatePLcache(final int numAlleles, final int ploidy,  final List<List<Integer>> expected){
+        GenotypeLikelihoods.plIndexToAlleleIndices.clear();
+        GenotypeLikelihoods.calculatePLcache(numAlleles, ploidy, new ArrayList<Integer>());
+        for ( int i=0; i < GenotypeLikelihoods.plIndexToAlleleIndices.size() ; i++){
+            Assert.assertTrue(GenotypeLikelihoods.plIndexToAlleleIndices.get(i).equals(expected.get(i)));
+        }
+    }
+
+
+    @DataProvider
+    public Object[][] testGetAllelesData() {
+        return new Object[][]{
+                {0, 2, 3, Arrays.asList(0,0,0)},
+                {1, 2, 3, Arrays.asList(0,0,1)},
+                {2, 2, 3, Arrays.asList(0,1,1)},
+                {3, 2, 3, Arrays.asList(1,1,1)},
+                {4, 2, 3, Arrays.asList(0,0,2)},
+                {5, 2, 3, Arrays.asList(0,1,2)},
+                {6, 2, 3, Arrays.asList(1,1,2)},
+                {7, 2, 3, Arrays.asList(0,2,2)},
+                {8, 2, 3, Arrays.asList(1,2,2)},
+                {9, 2, 3, Arrays.asList(2,2,2)},
+                {1, 2, 1, Arrays.asList(1)}
+        };
+    }
+
+    @Test(dataProvider = "testGetAllelesData")
+    public void testGetAlleles(final int PLindex, final int numAltAlleles, final int ploidy, final List<Integer> expected ){
+        GenotypeLikelihoods.initializePLIndexToAlleleIndices(numAltAlleles, ploidy);
+        final List<Integer> alleles = GenotypeLikelihoods.getAlleles(PLindex, ploidy);
+        Assert.assertTrue(alleles.equals(expected));
+    }
+
+    @DataProvider
+    public Object[][] testGetAllelesIndexOutOfBoundsData() {
+        return new Object[][]{
+                {-1, 2, 3},
+                {10, 2, 3}
+        };
+    }
+
+    @Test(dataProvider = "testGetAllelesIndexOutOfBoundsData", expectedExceptions = IndexOutOfBoundsException.class)
+    public void testGetAllelesOutOfBounds(final int PLindex, final int numAltAlleles, final int ploidy){
+        GenotypeLikelihoods.initializePLIndexToAlleleIndices(numAltAlleles, ploidy);
+        final List<Integer> alleles = GenotypeLikelihoods.getAlleles(PLindex, ploidy);
+    }
+
+    @Test(expectedExceptions = IllegalStateException.class)
+    public void testGetAllelesUnitialized(){
+        GenotypeLikelihoods.plIndexToAlleleIndices.clear();
+        final List<Integer> alleles = GenotypeLikelihoods.getAlleles(0, 3);
     }
 }
